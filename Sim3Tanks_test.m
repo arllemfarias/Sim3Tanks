@@ -5,7 +5,7 @@ addpath(genpath('src'));
 
 % Set time vector.
 tstart = 0;   % Start time
-tstop  = 300; % Stop time
+tstop  = 200; % Stop time
 Ts     = 0.1; % Sample time
 time = tstart : Ts : tstop;
 
