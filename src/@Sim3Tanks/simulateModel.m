@@ -173,9 +173,36 @@ end
 
 %==========================================================================
 
-i = 1;
+% Flow rate vector
+Qx0 = objSim3Tanks.getInternalFlowVariables();
+Qx0 = Qx0(end,:);
 
-while(1)
+[pNoise,~] = checkEnabledNoises(objSim3Tanks);
+
+% Solver Configuration
+options = odeset('MaxStep',Tspan,'RelTol',1e-6);
+model = @(t,x)sysDynamics(Sc,Qx0,pNoise);
+[t,x] = ode45(model,[0 Tspan],x,options);
+
+if(isfinite(x))
+    if(allSteps)
+        x = satSignal(x(2:end,:),[0 Hmax]);
+        t = t(2:end);
+    else
+        x = satSignal(x(end,:),[0 Hmax]);
+        t = t(end);
+    end
+else
+    error(getMessage('ERR007'));
+end
+
+numberOfSteps = size(x,1);
+y = zeros(numberOfSteps,Nx+Nq);
+q = zeros(numberOfSteps,Nq);
+
+t0 = objSim3Tanks.getInternalSimulationTime(end);
+
+for i = 1 : numberOfSteps
 
     % Flow rate vector
     Qx = [...
@@ -184,33 +211,7 @@ while(1)
         K(3)*satSignal(Qp3,[Qmin Qmax]),...
         sysFlowRates(x(i,:),K,h0,Beta)];
 
-    [pNoise,mNoise] = checkEnabledNoises(objSim3Tanks);
-
-    if(i==1) % Levels --> x = [h1,h2,h3]
-
-        % Solver Configuration
-        options = odeset('MaxStep',Tspan,'RelTol',1e-6);
-        [t,x] = ode45(@(t,x)sysDynamicModel(Sc,Qx,pNoise),[0 Tspan],x,options);
-
-        if(isfinite(x))
-            if(allSteps)
-                x = satSignal(x(2:end,:),[0 Hmax]);
-                t = t(2:end,:);
-            else
-                x = satSignal(x(end,:),[0 Hmax]);
-                t = t(end);
-            end
-        else
-            error(getMessage('ERR007'));
-        end
-
-        numberOfStates = size(x,1);
-        y = zeros(numberOfStates,Nx+Nq);
-        q = zeros(numberOfStates,Nq);
-
-        t0 = objSim3Tanks.getInternalSimulationTime(end);
-
-    end
+    [~,mNoise] = checkEnabledNoises(objSim3Tanks);
 
     % Flows --> q = [Q1in,Q2in,Q3in,Qa,Qb,Q13,Q23,Q1,Q2,Q3]
     q(i,:) = Qx;
@@ -225,11 +226,5 @@ while(1)
     objSim3Tanks.pushInternalFaultMagnitudes(faultMag');
     objSim3Tanks.pushInternalFaultOffsets(offset(11:end)');
     objSim3Tanks.incrementInternalSimulationTime(t0+t(i));
-
-    if(i>=numberOfStates)
-        break;
-    else
-        i = i + 1;
-    end
 
 end
