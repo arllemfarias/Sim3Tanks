@@ -84,12 +84,12 @@ for k = 2 : N % k=1 conrresponds to initial condition
 
     % Process noise.
     tts.Model.ProcessNoise.EnableSignal = false; % It is not enable
-    tts.Model.ProcessNoise.Magnitude = random('norm',0,0.1,[1 3]);
+    tts.Model.ProcessNoise.Magnitude = random('norm',0,0.2,[1 3]);
 
     % Measurement noise.
     tts.Model.MeasurementNoise.EnableSignal = true; % It is enable
-    yx = random('norm',0,0.2,[1 03]); % Level sensors
-    yq = random('norm',0,0.6,[1 10]); % Flow sensors
+    yx = random('norm',0,0.5,[1 03]); % Level sensors
+    yq = random('norm',0,2.5,[1 10]); % Flow sensors
     tts.Model.MeasurementNoise.Magnitude = [yx,yq];
 
     % Simulating the system.
