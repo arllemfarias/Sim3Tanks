@@ -1,4 +1,4 @@
-function [y,x,q] = simulateModel(varargin)
+function [ysol,xsol,qsol] = simulateModel(varargin)
 % simulateModel is a Sim3Tanks method. This method simulates the dynamic
 % behavior of the three-tank system defined by the user.
 %
@@ -139,27 +139,31 @@ end
 Nx = numel(Sim3Tanks.LIST_OF_STATES);
 Nq = numel(Sim3Tanks.LIST_OF_FLOWS);
 
-x = objSim3Tanks.getInternalStateVariables();
+Qin = [...
+    K(1)*satSignal(Qp1,[Qmin Qmax]),...
+    K(2)*satSignal(Qp2,[Qmin Qmax]),...
+    K(3)*satSignal(Qp3,[Qmin Qmax]),...
+    ];
 
-if(isempty(x))
+x_vec = objSim3Tanks.getInternalStateVariables();
 
-    x = objSim3Tanks.Model.InitialCondition;
+if(isempty(x_vec))
 
-    if(isempty(x)||~isrow(x)||numel(x)~=numel(Sim3Tanks.LIST_OF_STATES))
+    x0 = objSim3Tanks.Model.InitialCondition;
+
+    if(isempty(x0)||~isrow(x0)||numel(x0)~=numel(Sim3Tanks.LIST_OF_STATES))
         error(getMessage('ERR024'));
     end
 
-    q = [...
-        K(1)*satSignal(Qp1,[Qmin Qmax]),...
-        K(2)*satSignal(Qp2,[Qmin Qmax]),...
-        K(3)*satSignal(Qp3,[Qmin Qmax]),...
-        sysFlowRates(x,K,h0,Beta)];
+    Qx = sysFlowRates(x0,K,h0,Beta);
+
+    q = [Qin,Qx];
 
     [~,mNoise] = checkEnabledNoises(objSim3Tanks);
 
-    y = sysMeasurements(x,q,faultMag,offset,mNoise);
+    y = sysMeasurements(x0,q,faultMag,offset,mNoise);
 
-    objSim3Tanks.setInternalStateVariables(x);
+    objSim3Tanks.setInternalStateVariables(x0);
     objSim3Tanks.setInternalFlowVariables(q);
     objSim3Tanks.setInternalSensorMeasurements(y);
     objSim3Tanks.setInternalValveSignals(opMode');
@@ -168,63 +172,56 @@ if(isempty(x))
     objSim3Tanks.resetInternalSimulationTime();
 
 else
-    x = x(end,:);
+    x0 = x_vec(end,:);
 end
 
 %==========================================================================
 
-% Flow rate vector
-Qx0 = objSim3Tanks.getInternalFlowVariables();
-Qx0 = Qx0(end,:);
+% Solver Configuration
+options = odeset('MaxStep',Tspan,'RelTol',1e-6);
 
 [pNoise,~] = checkEnabledNoises(objSim3Tanks);
 
-% Solver Configuration
-options = odeset('MaxStep',Tspan,'RelTol',1e-6);
-model = @(t,x)sysDynamics(Sc,Qx0,pNoise);
-[t,x] = ode45(model,[0 Tspan],x,options);
+model = @(t,x)sysDynamics(t,x,Qin,K,h0,Sc,Beta,pNoise);
 
-if(isfinite(x))
+[tsol,xsol] = ode45(model,[0 Tspan],x0,options);
+
+if(all(isfinite(xsol),'all'))
     if(allSteps)
-        x = satSignal(x(2:end,:),[0 Hmax]);
-        t = t(2:end);
+        xsol = satSignal(xsol(2:end,:),[0 Hmax]);
+        tsol = tsol(2:end);
     else
-        x = satSignal(x(end,:),[0 Hmax]);
-        t = t(end);
+        xsol = satSignal(xsol(end,:),[0 Hmax]);
+        tsol = tsol(end);
     end
 else
     error(getMessage('ERR007'));
 end
 
-numberOfSteps = size(x,1);
-y = zeros(numberOfSteps,Nx+Nq);
-q = zeros(numberOfSteps,Nq);
+numberOfSteps = size(xsol,1);
+ysol = zeros(numberOfSteps,Nx+Nq);
+qsol = zeros(numberOfSteps,Nq);
 
 t0 = objSim3Tanks.getInternalSimulationTime(end);
 
 for i = 1 : numberOfSteps
 
-    % Flow rate vector
-    Qx = [...
-        K(1)*satSignal(Qp1,[Qmin Qmax]),...
-        K(2)*satSignal(Qp2,[Qmin Qmax]),...
-        K(3)*satSignal(Qp3,[Qmin Qmax]),...
-        sysFlowRates(x(i,:),K,h0,Beta)];
+    Qx = sysFlowRates(xsol(i,:),K,h0,Beta);
+
+    % Flows --> q = [Q1in,Q2in,Q3in,Qa,Qb,Q13,Q23,Q1,Q2,Q3]
+    qsol(i,:) = [Qin,Qx];
 
     [~,mNoise] = checkEnabledNoises(objSim3Tanks);
 
-    % Flows --> q = [Q1in,Q2in,Q3in,Qa,Qb,Q13,Q23,Q1,Q2,Q3]
-    q(i,:) = Qx;
-
     % Measurements --> y = [h1,h2,h3,Q1in,Q2in,Q3in,Qa,Qb,Q13,Q23,Q1,Q2,Q3]
-    y(i,:) = sysMeasurements(x(i,:),q(i,:),faultMag,offset,mNoise);
+    ysol(i,:) = sysMeasurements(xsol(i,:),qsol(i,:),faultMag,offset,mNoise);
 
-    objSim3Tanks.pushInternalStateVariables(x(i,:));
-    objSim3Tanks.pushInternalFlowVariables(q(i,:));
-    objSim3Tanks.pushInternalSensorMeasurements(y(i,:));
+    objSim3Tanks.pushInternalStateVariables(xsol(i,:));
+    objSim3Tanks.pushInternalFlowVariables(qsol(i,:));
+    objSim3Tanks.pushInternalSensorMeasurements(ysol(i,:));
     objSim3Tanks.pushInternalValveSignals(K');
     objSim3Tanks.pushInternalFaultMagnitudes(faultMag');
     objSim3Tanks.pushInternalFaultOffsets(offset(11:end)');
-    objSim3Tanks.incrementInternalSimulationTime(t0+t(i));
+    objSim3Tanks.incrementInternalSimulationTime(t0+tsol(i));
 
 end
